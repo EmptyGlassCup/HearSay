@@ -21,11 +21,11 @@ class JustifyEvent(Event):
 
 @dataclass(kw_only=True)
 class RetractClaimEvent(Event):
-    claim_id: str
+    retract_claim_id: str
 
 @dataclass(kw_only=True)
 class RetractJustifyEvent(Event):
-    justification_id: str
+    retract_justification_id: str
 
 @dataclass(kw_only=True)
 class ChallengeEvent(Event):
