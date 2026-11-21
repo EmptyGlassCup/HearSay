@@ -20,8 +20,12 @@ class JustifyEvent(Event):
     premises: tuple[str, ...]
 
 @dataclass(kw_only=True)
-class RetractEvent(Event):
-    retract_id: str
+class RetractClaimEvent(Event):
+    claim_id: str
+
+@dataclass(kw_only=True)
+class RetractJustifyEvent(Event):
+    justification_id: str
 
 @dataclass(kw_only=True)
 class ChallengeEvent(Event):
