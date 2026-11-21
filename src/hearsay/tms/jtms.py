@@ -12,7 +12,7 @@ class Justification:
     conclusion: str
     premises: tuple[str, ...]
 
-#Justification Based Truth System
+#Justification Based Truth Maintenece System
 class JTMS:
     def __init__(self):
         self.claims = {}
@@ -39,17 +39,17 @@ class JTMS:
         
         self.justifications[justification.id] = justification
     
-    def retract_claim(self, claim: Claim):
-        if claim.id not in self.claims:
-            raise ValueError(f"Claim {claim.id} does not exist")
+    def retract_claim(self, claim_id: str):
+        if claim_id not in self.claims:
+            raise ValueError(f"Claim {claim_id} does not exist")
         
-        self.retracted_claims.add(claim.id)
+        self.retracted_claims.add(claim_id)
 
-    def retract_justification(self, justification: Justification):
-        if justification.id not in self.justifications:
-            raise ValueError(f"Justification {justification.id} does not exist")
+    def retract_justification(self, justification_id: str):
+        if justification_id not in self.justifications:
+            raise ValueError(f"Justification {justification_id} does not exist")
         
-        self.retracted_justifications.add(justification.id)
+        self.retracted_justifications.add(justification_id)
 
     def in_set(self):
         # Find all unretracted claims and justifications
