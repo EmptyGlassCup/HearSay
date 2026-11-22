@@ -5,11 +5,11 @@ class KnowledgeSource(ABC):
     name: str
 
     @abstractmethod
-    def condition(self, board):
-        '''Return a list of activations which the Knowledge Source can choose from'''
+    def condition(self, board) -> list['Activation']:
+        '''Return a list of activations which the Knowledge Source could choose to do'''
     
     @abstractmethod
-    def action(self, activation, board):
+    def action(self, activation, board) -> list['Event']:
         '''Execute the parameter activation and return the list of events produced'''
         
 

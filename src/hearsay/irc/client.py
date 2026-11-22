@@ -1,6 +1,8 @@
 import asyncio
 from hearsay.irc.parser import parse, IRCMessage, serialize
 
+SERVER_CMDS = ('CAP', '001', '002', '003', '004', '005', '221', '251', '252', '253', '254', '255', '265', '266', '372', '375', '376', '353', '366')
+
 class IRCClient:
     def __init__(self, host: str, port: int, nickname: str, on_message):
         """
@@ -58,7 +60,7 @@ class IRCClient:
                 continue
 
             # Don't pass CAP or numeric commands to kernal
-            if msg.command in ('CAP', '001', '002', '003', '004', '005', '251', '252', '253', '254', '255', '265', '266', '372', '375', '376', '353', '366'):
+            if msg.command in SERVER_CMDS:
                 continue
             
             await self.on_message(msg)
