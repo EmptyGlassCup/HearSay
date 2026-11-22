@@ -18,6 +18,7 @@ src/hearsay/
   ui/              server.py, web/               [KIRO]
 
 tests/             property + unit tests
+scripts/           throwaway manual-run scripts (connection test, toy runs) — not shipped
 eval/
   scenarios/       seeded tasks with ground truth
   results/         ablation outputs (gitignored)

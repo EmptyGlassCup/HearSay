@@ -40,7 +40,7 @@ Target: complete by Nov 18, 2026.
 ## Done criteria
 - [ ] Repo is public on GitHub with MIT license.
 - [ ] Ergo is running locally.
-- [ ] Tag relay is confirmed (or fallback strategy is documented).
+- [x] Tag relay is confirmed (or fallback strategy is documented).
 - [ ] `pytest` runs cleanly in the venv.
 - [ ] `import hearsay` works.
 - [ ] Domain decision note exists.

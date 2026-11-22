@@ -8,21 +8,33 @@ Each blackboard event is one IRC `PRIVMSG` with IRCv3 client-only message tags (
 
 | Tag | Meaning |
 |---|---|
-| `+bb-kind` | Event type: `claim`, `justify`, `retract`, `challenge`, `activate`, `result` |
+| `+bb-kind` | Event type: `claim`, `justify`, `retract-claim`, `retract-justify`, `challenge`, `activate`, `result` |
 | `+bb-id` | Claim or justification ID |
 | `+bb-level` | Abstraction level (integer) |
 | `+bb-conf` | Credibility score, float in [0,1] |
 | `+bb-claim-kind` | Claim kind: `evidence`, `hypothesis`, `conclusion`, `goal` |
 | `+bb-conclusion` | For `justify`: the claim ID being justified |
 | `+bb-premises` | For `justify`: comma-separated list of premise claim IDs |
-| `+bb-ref` | For `retract`: ID of the claim or justification being retracted |
+| `+bb-ref` | For `retract-claim` / `retract-justify`: ID of the claim or justification being retracted |
+
+> **Design change (Phase 3).** Retraction was split into two distinct event types in
+> `protocol/events.py`: `RetractClaimEvent` (field `claim_id`) and `RetractJustifyEvent`
+> (field `justification_id`). The event itself declares whether a claim or a justification
+> is being retracted, so the board never has to infer the target kind from the id. This
+> replaces the earlier single `retract` event with a bare `+bb-ref`.
+>
+> **Codec implication for Phase 4 (do not forget):** the wire format must distinguish the
+> two. Use two `+bb-kind` values — `retract-claim` and `retract-justify` — both carrying
+> `+bb-ref`. The codec must map each to the correct event class. Keep this table, the
+> example messages below, and `protocol/events.py` in sync; if any one changes, change all three.
 
 ### Example messages
 
 ```
 @+bb-kind=claim;+bb-id=c42;+bb-claim-kind=hypothesis;+bb-level=2;+bb-conf=0.7 :logexpert!l@h PRIVMSG #hypotheses :Deploy at 03:12 likely caused the latency spike
 @+bb-kind=justify;+bb-id=j7;+bb-conclusion=c42;+bb-premises=c17,c19 :logexpert!l@h PRIVMSG #hypotheses :c42 follows from c17 and c19
-@+bb-kind=retract;+bb-ref=c17 :metricexpert!m@h PRIVMSG #evidence :Retracting c17: dashboard was misread
+@+bb-kind=retract-claim;+bb-ref=c17 :metricexpert!m@h PRIVMSG #evidence :Retracting c17: dashboard was misread
+@+bb-kind=retract-justify;+bb-ref=j7 :metricexpert!m@h PRIVMSG #hypotheses :Retracting j7: inference was invalid
 ```
 
 ### Channel mapping
@@ -63,7 +75,12 @@ These must each have a Hypothesis property-based test.
 2. **Completeness**: the IN set equals the least fixpoint of the labeling rule, computed by a naive from-scratch oracle.
 3. **Incremental = batch**: incremental relabeling gives the same result as full recomputation on the same inputs.
 4. **Order independence**: the same set of assertions and retractions yields the same labeling regardless of order.
-5. **Revival**: retract then re-assert a premise restores the previous labeling exactly.
+5. **Revival**: retraction is permanent — there is no un-retract. A claim that went OUT
+   because a premise was retracted revives (returns IN) when a *new* justification with
+   all-IN premises is added that routes around the dead premise. The old (broken)
+   justification stays in the log as a ghost; revival comes from new support, not from
+   restoring the retracted premise. (Design: permanent retraction, Phase 3 — keeps the
+   event log append-only and the audit trail intact.)
 6. **No self-support**: cyclic justifications alone never make claims IN.
 
 ### Protocol and kernel
