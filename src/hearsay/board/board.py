@@ -10,6 +10,7 @@ class Board:
         self.event_log = EventLog()
         self.jtms = JTMS()
         self.claim_events = {}
+        self.justify_events = {}
         self.challenges = set()
     
     def apply(self, event: Event):
@@ -24,6 +25,8 @@ class Board:
             case JustifyEvent():
                 justification = Justification(id=event.justification_id, conclusion=event.conclusion, premises=event.premises)
                 self.jtms.add_justification(justification)
+
+                self.justify_events[event.justification_id] = event
             case RetractClaimEvent():
                 self.jtms.retract_claim(event.retract_claim_id)
             case RetractJustifyEvent():
