@@ -9,6 +9,7 @@ class Scheduler:
     
     def run(self):
         #TODO: also implement break when a goal claim is IN
+        all_events = []
         while self.budget > 0:
             # Get a list of all possible activations
             activations = []
@@ -23,15 +24,18 @@ class Scheduler:
             chosen_ks = chosen_activation.ks
 
             events = chosen_ks.action(chosen_activation, self.board)
+            all_events = all_events + events
 
             # Apply the outlined events from the KS to the board
             for event in events:
                 self.board.apply(event)
                 
             self.budget -=1
+        
+        return all_events
     
     def _pick(self, activations: list[Activation]):
         #TODO: More comprehensive pick
         return activations[0]
-        
+    
 
