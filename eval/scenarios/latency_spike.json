@@ -1,0 +1,56 @@
+{
+  "id": "latency_spike",
+  "title": "Web service p99 latency spike at 03:14",
+  "question": "What is the root cause of the latency spike?",
+  "ground_truth": "A config change at 03:12 reduced db.pool.max from 50 to 5, causing requests to queue waiting for database connections.",
+  "evidence": [
+    {
+      "id": "e_cfg",
+      "text": "03:12 config change: db.pool.max 50 -> 5",
+      "kind": "evidence",
+      "level": 0,
+      "credibility": 0.95,
+      "misleading": false
+    },
+    {
+      "id": "e_lat",
+      "text": "03:14 p99 latency rose 180ms -> 4200ms",
+      "kind": "evidence",
+      "level": 0,
+      "credibility": 0.99,
+      "misleading": false
+    },
+    {
+      "id": "e_wait",
+      "text": "03:14 db connection wait time 3800ms",
+      "kind": "evidence",
+      "level": 0,
+      "credibility": 0.9,
+      "misleading": false
+    },
+    {
+      "id": "e_dep",
+      "text": "03:10 deployment of v2.4.1",
+      "kind": "evidence",
+      "level": 0,
+      "credibility": 0.9,
+      "misleading": false
+    },
+    {
+      "id": "e_cpu",
+      "text": "03:14 CPU usage 40% (within normal range)",
+      "kind": "evidence",
+      "level": 0,
+      "credibility": 0.9,
+      "misleading": false
+    },
+    {
+      "id": "e_mem",
+      "text": "03:14 memory usage 95%",
+      "kind": "evidence",
+      "level": 0,
+      "credibility": 0.85,
+      "misleading": true
+    }
+  ]
+}
