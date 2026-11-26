@@ -11,6 +11,7 @@ HOST = '127.0.0.1'
 PORT = 6667
 BUDGET = 10
 NICKNAME = 'tester'
+GOAL_THRESHOLD = 0.0
 
 class AndKS(KnowledgeSource):
     '''
@@ -69,7 +70,8 @@ async def main():
         host=HOST,
         port=PORT,
         nickname=NICKNAME,
-        budget=BUDGET
+        budget=BUDGET,
+        goal_threshold=GOAL_THRESHOLD
     )
 
     await kernel.start()

@@ -24,18 +24,23 @@ def parse(line: str) -> IRCMessage:
             tags[key] = value
     
         # Strip away the tags
-        line = line.split(maxsplit=1)[1]
+        parts = line.split(maxsplit=1)
+        line = parts[1] if len(parts) > 1 else ''
 
     # Check if message has prefix
     prefix = None
     if line.startswith(':'):
-        prefix = line.split(maxsplit=1)[0][1:]
+        parts = line.split(maxsplit=1)
+        prefix = parts[0][1:]
 
         # Strip away prefix
-        line = line.split(maxsplit=1)[1]
+        line = parts[1] if len(parts) > 1 else ''
+
 
     # Add the command
     parts = line.split(maxsplit=1)
+    if not parts:
+        return IRCMessage(command='')
     command = parts[0]
     line = parts[1] if len(parts) > 1 else ''
 

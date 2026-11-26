@@ -6,6 +6,7 @@ from hearsay.protocol.events import (
 from hearsay.control.scheduler import Scheduler
 
 BUDGET = 10
+GOAL_THRESHOLD = 0.0
 
 class AndKS(KnowledgeSource):
     '''
@@ -74,7 +75,7 @@ def test_scheduler():
 
     budget = BUDGET
 
-    scheduler = Scheduler(knowledge_sources=knowledge_sources, board=board, budget=budget)
+    scheduler = Scheduler(knowledge_sources=knowledge_sources, board=board, budget=budget, goal_threshold=GOAL_THRESHOLD)
 
     scheduler.run()
 

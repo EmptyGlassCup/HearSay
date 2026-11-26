@@ -54,7 +54,8 @@ class IRCClient:
 
             # Don't pass PING messages to kernal
             if msg.command == 'PING':
-                return_msg = serialize(IRCMessage(command='PONG', params=[msg.params[0]]))
+                pong_params = [msg.params[0]] if msg.params else []
+                return_msg = serialize(IRCMessage(command='PONG', params=pong_params))
                 self.send(return_msg)
 
                 continue

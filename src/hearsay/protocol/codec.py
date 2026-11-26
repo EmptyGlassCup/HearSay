@@ -121,6 +121,9 @@ def encode(event: Event, board: Board) -> IRCMessage:
                 params=[_channel(event, board), f"claim {event.challenge_id} has been challenged"]
                 )
             return msg
+
+        case _:
+            return None
         
             
 
@@ -131,18 +134,30 @@ def _channel(event: Event, board: Board) -> str:
         case ClaimEvent():
             level = event.level
         case JustifyEvent():
-            conclusion = board.claim_events[event.conclusion]
-            level = conclusion.level
+            try:
+                conclusion = board.claim_events[event.conclusion]
+                level = conclusion.level
+            except KeyError:
+                level = 1
         case RetractClaimEvent():
-            retracted_claim = board.claim_events[event.retract_claim_id]
-            level = retracted_claim.level
+            try:
+                retracted_claim = board.claim_events[event.retract_claim_id]
+                level = retracted_claim.level
+            except KeyError:
+                level = 1
         case RetractJustifyEvent():
-            retracted_justification = board.justify_events[event.retract_justification_id]
-            conclusion = board.claim_events[retracted_justification.conclusion]
-            level = conclusion.level
+            try:
+                retracted_justification = board.justify_events[event.retract_justification_id]
+                conclusion = board.claim_events[retracted_justification.conclusion]
+                level = conclusion.level
+            except KeyError:
+                level = 1
         case ChallengeEvent():
-            challanged_claim = board.claim_events[event.challenge_id]
-            level = challanged_claim.level
+            try:
+                challanged_claim = board.claim_events[event.challenge_id]
+                level = challanged_claim.level
+            except KeyError:
+                level = 1
         case _:
             level = 1
     
