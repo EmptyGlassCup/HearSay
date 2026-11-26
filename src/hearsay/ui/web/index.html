@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>HearSay — reasoning graph</title>
+  <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0d1117; color: #c9d1d9;
+      font-family: system-ui, sans-serif; }
+    #header { padding: 10px 16px; border-bottom: 1px solid #21262d; display: flex;
+      align-items: baseline; gap: 16px; }
+    #header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    #status { font-size: 12px; color: #8b949e; }
+    #legend { font-size: 12px; color: #8b949e; margin-left: auto; display: flex; gap: 14px; }
+    .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+      margin-right: 4px; vertical-align: middle; }
+    #cy { width: 100%; height: calc(100% - 44px); }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>HearSay</h1>
+    <span id="status">connecting…</span>
+    <div id="legend">
+      <span><span class="swatch" style="background:#58a6ff"></span>evidence</span>
+      <span><span class="swatch" style="background:#d29922"></span>hypothesis</span>
+      <span><span class="swatch" style="background:#3fb950"></span>conclusion</span>
+      <span><span class="swatch" style="background:#f85149"></span>goal</span>
+      <span style="opacity:.4"><span class="swatch" style="background:#8b949e"></span>ghost (OUT)</span>
+    </div>
+  </div>
+  <div id="cy"></div>
+
+  <script>
+    const KIND_COLORS = {
+      evidence: "#58a6ff", hypothesis: "#d29922",
+      conclusion: "#3fb950", goal: "#f85149",
+    };
+
+    const cy = cytoscape({
+      container: document.getElementById("cy"),
+      style: [
+        {
+          selector: "node",
+          style: {
+            "background-color": (n) => KIND_COLORS[n.data("kind")] || "#8b949e",
+            "label": "data(text)",
+            "color": "#e6edf3",
+            "font-size": 13,
+            "font-weight": 500,
+            "text-wrap": "wrap",
+            "text-max-width": 180,
+            "text-valign": "bottom",
+            "text-margin-y": 6,
+            "text-outline-color": "#0d1117",
+            "text-outline-width": 2,
+            "width": 34, "height": 34,
+            "border-width": 2,
+            "border-color": "#30363d",
+          },
+        },
+        {
+          // ghosts: OUT claims are dimmed and dashed
+          selector: "node[state = 'out']",
+          style: { "opacity": 0.3, "border-style": "dashed" },
+        },
+        {
+          selector: "node[?challenged]",
+          style: { "border-color": "#f85149", "border-width": 4 },
+        },
+        {
+          selector: "edge",
+          style: {
+            "width": 2.5,
+            "line-color": "#6e7681",
+            "target-arrow-color": "#6e7681",
+            "target-arrow-shape": "triangle",
+            "arrow-scale": 1.2,
+            "curve-style": "bezier",
+          },
+        },
+        {
+          selector: "edge[state = 'out']",
+          style: { "opacity": 0.2, "line-style": "dashed" },
+        },
+      ],
+    });
+
+    // Lay out by abstraction level: level 0 (evidence) at the top, higher levels below.
+    // A preset layout driven by each node's level gives a clean, stable hierarchy that
+    // reads left-to-right within a level and top-to-bottom across levels.
+    function layoutByLevel() {
+      const byLevel = {};
+      cy.nodes().forEach((n) => {
+        const lvl = n.data("level") ?? 0;
+        (byLevel[lvl] ||= []).push(n);
+      });
+      const container = cy.container();
+      const W = container.clientWidth || 1000;
+      const levels = Object.keys(byLevel).map(Number).sort((a, b) => a - b);
+      const rowGap = 170;
+      levels.forEach((lvl, row) => {
+        const nodes = byLevel[lvl];
+        const colGap = W / (nodes.length + 1);
+        nodes.forEach((n, i) => {
+          n.position({ x: colGap * (i + 1), y: 90 + row * rowGap });
+        });
+      });
+    }
+
+    function render(snapshot) {
+      const outIds = new Set(
+        snapshot.nodes.filter((n) => n.state === "out").map((n) => n.id)
+      );
+      const elements = [];
+      for (const n of snapshot.nodes) {
+        elements.push({ data: { ...n } });
+      }
+      for (const e of snapshot.edges) {
+        const state = outIds.has(e.source) || outIds.has(e.target) ? "out" : "in";
+        elements.push({ data: { ...e, state } });
+      }
+      cy.elements().remove();
+      cy.add(elements);
+      cy.layout({ name: "preset", positions: undefined, fit: false }).run();
+      layoutByLevel();
+      cy.fit(undefined, 60);
+    }
+
+    function connect() {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      const status = document.getElementById("status");
+      ws.onopen = () => (status.textContent = "connected");
+      ws.onclose = () => {
+        status.textContent = "disconnected — retrying…";
+        setTimeout(connect, 1500);
+      };
+      ws.onmessage = (msg) => render(JSON.parse(msg.data));
+    }
+    connect();
+  </script>
+</body>
+</html>
