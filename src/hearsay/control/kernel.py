@@ -19,20 +19,37 @@ class Kernel:
         self.client = IRCClient(host=host, port=port, nickname=nickname, on_message=self.on_message)
 
     async def on_message(self, msg: IRCMessage):
+        #Re-broadcast the event
+        # self.client.send(serialize(msg))
+
         # Apply Event to the Board
         event = decode(msg)
-        self.board.apply(event)
+        if event == None:
+            return
+
+        print(f"APPLYING: {event.claim_id if hasattr(event, 'claim_id') else event}")
+
+        try:
+            self.board.apply(event)
+        except Exception as e:
+            print(f"APPLY FAILED: {e}")
+            return
+        print(f"IN SET NOW: {self.board.jtms.in_set()}")
 
         # Run the scheduler
+        self.scheduler.budget = BUDGET
         ks_events = self.scheduler.run()
+        print(f"SCHEDULER PRODUCED: {[getattr(e, 'claim_id', e) for e in ks_events]}")
 
         # send out all the KS events to the IRC
-        for event in ks_events:
-            msg = serialize(encode(event, board))
-            self.client.send(msg)
+        for ks_event in ks_events:
+            ks_msg = serialize(encode(ks_event, self.board))
+            self.client.send(ks_msg)
     
     async def start(self):
         await self.client.connect()
+
+        # Loop forever
         await asyncio.Event().wait()
 
 
