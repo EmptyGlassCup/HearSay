@@ -42,6 +42,14 @@ class OpenAICompatClient(LLMClient):
         self.temperature = temperature
 
     def complete(self, prompt: str) -> str:
+        """Return just the text. Used by knowledge sources."""
+        text, _usage = self.complete_with_usage(prompt)
+        return text
+
+    def complete_with_usage(self, prompt: str) -> tuple[str, dict]:
+        """Return (text, usage) where usage is {'prompt_tokens', 'completion_tokens',
+        'total_tokens'}. Used by the evaluation harness to measure cost. Missing usage
+        fields default to 0 (some local servers omit them)."""
         url = f"{self.base_url}/chat/completions"
         body = {
             "model": self.model,
@@ -63,9 +71,17 @@ class OpenAICompatClient(LLMClient):
             raise LLMError(f"LLM returned non-JSON envelope: {exc}") from exc
 
         try:
-            return payload["choices"][0]["message"]["content"]
+            text = payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Unexpected LLM response shape: {exc}") from exc
+
+        raw_usage = payload.get("usage") or {}
+        usage = {
+            "prompt_tokens": raw_usage.get("prompt_tokens", 0),
+            "completion_tokens": raw_usage.get("completion_tokens", 0),
+            "total_tokens": raw_usage.get("total_tokens", 0),
+        }
+        return text, usage
 
 
 # Backward-compatible alias: the local-only name used before the generalisation.
