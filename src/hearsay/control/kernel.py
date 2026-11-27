@@ -1,5 +1,6 @@
 import asyncio
-from hearsay.protocol.codec import encode, decode
+from hearsay.protocol.codec import encode, decode, decode_human_command, HELP_TEXT
+from hearsay.protocol.events import ClaimEvent
 from hearsay.irc.parser import IRCMessage, serialize
 from hearsay.irc.client import IRCClient
 from hearsay.board.board import Board
@@ -14,16 +15,38 @@ class Kernel:
         self.client = IRCClient(host=host, port=port, nickname=nickname, on_message=self.on_message)
         self.nickname = nickname
         self.ui = UIServer(self.board, on_command=self.run_analysis)
+        self._human_claim_counter = 0   # assigns ids to human-typed !claim commands
+
+    def _allocate_human_id(self) -> str:
+        self._human_claim_counter += 1
+        return f"h{self._human_claim_counter}"
 
     async def on_message(self, msg: IRCMessage):
         if msg.prefix and msg.prefix.split('!')[0] == self.nickname:
             return
 
-        # Apply Event to the Board
+        # !help: reply with the command syntax, no board change.
+        text = msg.params[-1].strip() if msg.params else ""
+        if text.lower().startswith("!help"):
+            self.client.send(serialize(IRCMessage(
+                command="PRIVMSG", params=["#control", HELP_TEXT])))
+            return
+
+        # Tagged machine event first; fall back to a human-typed !command.
         event = decode(msg)
         if event is None:
+            event = decode_human_command(msg, self._allocate_human_id)
+        if event is None:
             return
+
         self.board.apply(event)
+
+        # Echo back the assigned id for a human claim, so they know how to retract it later.
+        if isinstance(event, ClaimEvent) and event.author != self.nickname:
+            self.client.send(serialize(IRCMessage(
+                command="PRIVMSG",
+                params=["#control", f"added {event.claim_id}: {event.text}"])))
+
         await self.ui.broadcast()
 
     async def run_analysis(self, cmd=None):
