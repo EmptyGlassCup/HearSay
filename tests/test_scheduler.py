@@ -4,6 +4,7 @@ from hearsay.protocol.events import (
     Event, ClaimEvent, JustifyEvent, RetractClaimEvent, RetractJustifyEvent, ChallengeEvent
 )
 from hearsay.control.scheduler import Scheduler
+from hearsay.control.ks import KnowledgeSource, Activation
 
 BUDGET = 10
 GOAL_THRESHOLD = 0.0
@@ -25,7 +26,7 @@ class AndKS(KnowledgeSource):
         
         return []
     
-    def action(self, activation, board):
+    async def action(self, activation, board):
         claim_event = ClaimEvent(author=self.name, claim_id='C', text='A and B is in. So make C in.',
         kind='hypothesis', level=1, credibility=0.5)
 
@@ -51,7 +52,7 @@ class ImpliesKS(KnowledgeSource):
         
         return []
         
-    def action(self, activation, board):
+    async def action(self, activation, board):
         claim_event = ClaimEvent(author=self.name, claim_id='D', text='C is in, so make D in',
         kind='hypothesis', level=2, credibility=0.3)
 
@@ -59,7 +60,7 @@ class ImpliesKS(KnowledgeSource):
 
         return [claim_event, justify_event]
 
-def test_scheduler():
+async def test_scheduler():
     # Create Knowledge sources
     and_ks= AndKS()
     implies_ks = ImpliesKS()
@@ -77,6 +78,81 @@ def test_scheduler():
 
     scheduler = Scheduler(knowledge_sources=knowledge_sources, board=board, budget=budget, goal_threshold=GOAL_THRESHOLD)
 
-    scheduler.run()
+    await scheduler.run()
 
     assert board.jtms.in_set() == frozenset({'A', 'B', 'C', 'D'})
+
+
+# --- scoring / determinism (property 9) ---------------------------------------
+
+class ChoiceKS(KnowledgeSource):
+    """Proposes one activation per candidate claim id, so _pick has a real choice.
+    Each run it offers activations triggered by each still-unprocessed candidate; running
+    one marks it processed by creating a derived claim, so the KS eventually goes quiet.
+    """
+    name = "choice"
+
+    def __init__(self, candidate_ids):
+        self.candidate_ids = candidate_ids
+
+    def condition(self, board):
+        in_set = board.jtms.in_set()
+        acts = []
+        for cid in self.candidate_ids:
+            if cid in in_set and f"d_{cid}" not in board.claim_events:
+                acts.append(Activation(ks=self, trigger_claims=(cid,)))
+        return acts
+
+    async def action(self, activation, board):
+        src = activation.trigger_claims[0]
+        claim = ClaimEvent(author=self.name, claim_id=f"d_{src}", text=f"derived from {src}",
+                           kind="hypothesis", level=1, credibility=0.5)
+        justify = JustifyEvent(author=self.name, justification_id=f"jd_{src}",
+                               conclusion=f"d_{src}", premises=(src,))
+        return [claim, justify]
+
+
+def _board_with(cred_map):
+    """Board seeded with evidence claims {id: credibility}."""
+    board = Board()
+    for cid, cred in cred_map.items():
+        board.apply(ClaimEvent(author="t", claim_id=cid, text=cid,
+                               kind="evidence", level=0, credibility=cred))
+    return board
+
+
+async def test_pick_prefers_higher_credibility():
+    # Two candidates, different credibility; the first chosen should be the more credible.
+    board = _board_with({"lo": 0.2, "hi": 0.9})
+    ks = ChoiceKS(["lo", "hi"])
+    sched = Scheduler(knowledge_sources=[ks], board=board, budget=1)
+    await sched.run()
+    # With budget 1, only one activation ran. The high-credibility one should have won.
+    assert "d_hi" in board.claim_events
+    assert "d_lo" not in board.claim_events
+
+
+async def test_pick_is_deterministic_across_identical_schedulers():
+    # Property 9: identical boards -> identical choices. Run two independent schedulers on
+    # separate but identical boards and assert they produce the same final claim set.
+    results = []
+    for _ in range(2):
+        board = _board_with({"a": 0.5, "b": 0.5, "c": 0.5})
+        ks = ChoiceKS(["a", "b", "c"])
+        sched = Scheduler(knowledge_sources=[ks], board=board, budget=10)
+        await sched.run()
+        results.append(frozenset(board.claim_events))
+    assert results[0] == results[1]
+
+
+def test_pick_tie_break_is_stable_regardless_of_activation_order():
+    # Equal scores must break ties by (ks.name, sorted triggers), not list order.
+    # Use a FRESH scheduler for each call: _pick mutates novelty memory, so calling it
+    # twice on one instance would not be an apples-to-apples comparison.
+    board = _board_with({"a": 0.5, "b": 0.5})
+    ks = ChoiceKS(["a", "b"])
+    acts = ks.condition(board)
+
+    forward = Scheduler([ks], board, budget=1)._pick(list(acts))
+    backward = Scheduler([ks], board, budget=1)._pick(list(reversed(acts)))
+    assert forward.trigger_claims == backward.trigger_claims

@@ -22,6 +22,13 @@ state is "in" or "out" (out = ghost). An edge goes premise -> conclusion.
 def board_snapshot(board) -> dict:
     in_set = board.jtms.in_set()
 
+    # Map each claim to the justifications concluding it, so the UI can show "built on …".
+    justs_by_conclusion: dict[str, list[dict]] = {}
+    for just_id, jev in board.justify_events.items():
+        justs_by_conclusion.setdefault(jev.conclusion, []).append(
+            {"id": just_id, "premises": list(jev.premises), "author": jev.author}
+        )
+
     nodes = []
     for claim_id, ev in board.claim_events.items():
         nodes.append({
@@ -30,8 +37,10 @@ def board_snapshot(board) -> dict:
             "kind": ev.kind,
             "level": ev.level,
             "credibility": ev.credibility,
+            "author": ev.author,
             "state": "in" if claim_id in in_set else "out",
             "challenged": claim_id in board.challenges,
+            "justifications": justs_by_conclusion.get(claim_id, []),
         })
 
     edges = []

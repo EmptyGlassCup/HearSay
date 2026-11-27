@@ -7,8 +7,13 @@ calls `broadcast()` after it applies events, so the graph updates live.
 
 The UI never mutates the board — it only renders snapshots.
 
+Commands: the browser can send a command back over the WebSocket (e.g. the "Run analysis"
+button sends {"cmd": "run"}). The server invokes the kernel-provided `on_command` coroutine.
+This is how a human decides WHEN the agents reason — evidence arrives continuously, but the
+scheduler only runs when the operator asks.
+
 Usage (wired by the kernel):
-    ui = UIServer(board)
+    ui = UIServer(board, on_command=kernel.run_analysis)
     await ui.start(host="127.0.0.1", port=8000)   # runs uvicorn in the background
     ...
     await ui.broadcast()                            # after board changes
@@ -26,8 +31,11 @@ _WEB_DIR = Path(__file__).parent / "web"
 
 
 class UIServer:
-    def __init__(self, board):
+    def __init__(self, board, on_command=None):
         self.board = board
+        # on_command: async callable invoked with the command name when the browser sends
+        # one (e.g. "run"). The kernel passes its run_analysis coroutine here.
+        self.on_command = on_command
         self.app = FastAPI()
         self._clients: set[WebSocket] = set()
         self._server: uvicorn.Server | None = None
@@ -46,12 +54,25 @@ class UIServer:
             await websocket.send_json(board_snapshot(self.board))
             try:
                 while True:
-                    # We don't expect client messages; keep the socket open.
-                    await websocket.receive_text()
+                    raw = await websocket.receive_text()
+                    await self._handle_command(raw)
             except WebSocketDisconnect:
                 pass
             finally:
                 self._clients.discard(websocket)
+
+    async def _handle_command(self, raw: str):
+        """Interpret a command from the browser and invoke the kernel's handler."""
+        if self.on_command is None:
+            return
+        try:
+            import json
+            msg = json.loads(raw)
+            cmd = msg.get("cmd")
+        except (ValueError, AttributeError):
+            return
+        if cmd:
+            await self.on_command(cmd)
 
     async def broadcast(self):
         """Push the current board snapshot to every connected browser."""

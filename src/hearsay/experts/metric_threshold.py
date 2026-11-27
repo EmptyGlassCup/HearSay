@@ -87,7 +87,9 @@ class MetricThresholdKS(KnowledgeSource):
 
         return activations
 
-    def action(self, activation, board) -> list:
+    async def action(self, activation, board) -> list:
+        # No blocking work here (pure rule application), but the interface is async so the
+        # scheduler can await every KS uniformly.
         rule: ThresholdRule = activation.payload["rule"]
 
         claim = ClaimEvent(

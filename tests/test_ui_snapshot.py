@@ -26,6 +26,13 @@ def test_snapshot_nodes_and_states():
     assert all(n["state"] == "in" for n in snap["nodes"])
     assert by_id["c3"]["kind"] == "hypothesis"
     assert by_id["c3"]["level"] == 1
+    assert by_id["c3"]["author"] == "t"
+
+    # c3 carries its justification; c1 (raw premise) carries none
+    assert by_id["c3"]["justifications"] == [
+        {"id": "j1", "premises": ["c1", "c2"], "author": "t"}
+    ]
+    assert by_id["c1"]["justifications"] == []
 
     # one justification with two premises -> two edges into c3
     into_c3 = [e for e in snap["edges"] if e["target"] == "c3"]

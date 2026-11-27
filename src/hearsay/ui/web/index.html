@@ -10,16 +10,35 @@
     #header { padding: 10px 16px; border-bottom: 1px solid #21262d; display: flex;
       align-items: baseline; gap: 16px; }
     #header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    #run-btn { background: #238636; color: #fff; border: none; border-radius: 6px;
+      padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    #run-btn:hover { background: #2ea043; }
+    #run-btn:disabled { background: #30363d; color: #8b949e; cursor: default; }
     #status { font-size: 12px; color: #8b949e; }
     #legend { font-size: 12px; color: #8b949e; margin-left: auto; display: flex; gap: 14px; }
     .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
       margin-right: 4px; vertical-align: middle; }
     #cy { width: 100%; height: calc(100% - 44px); }
+    #panel {
+      position: absolute; top: 56px; right: 12px; width: 300px;
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 14px 16px; font-size: 13px; display: none; box-shadow: 0 4px 16px #0008;
+    }
+    #panel h2 { margin: 0 0 8px; font-size: 14px; }
+    #panel .row { margin: 4px 0; color: #8b949e; }
+    #panel .row b { color: #c9d1d9; font-weight: 600; }
+    #panel .text { margin: 8px 0; color: #e6edf3; line-height: 1.4; }
+    #panel .just { margin-top: 10px; padding-top: 8px; border-top: 1px solid #21262d; }
+    #panel .pill { display: inline-block; padding: 1px 7px; border-radius: 10px;
+      font-size: 11px; font-weight: 600; }
+    #panel .close { position: absolute; top: 10px; right: 12px; cursor: pointer;
+      color: #8b949e; }
   </style>
 </head>
 <body>
   <div id="header">
     <h1>HearSay</h1>
+    <button id="run-btn" title="Run the reasoning agents over the current board">Run analysis</button>
     <span id="status">connecting…</span>
     <div id="legend">
       <span><span class="swatch" style="background:#58a6ff"></span>evidence</span>
@@ -30,6 +49,10 @@
     </div>
   </div>
   <div id="cy"></div>
+  <div id="panel">
+    <span class="close" onclick="document.getElementById('panel').style.display='none'">✕</span>
+    <div id="panel-body"></div>
+  </div>
 
   <script>
     const KIND_COLORS = {
@@ -127,16 +150,68 @@
       cy.fit(undefined, 60);
     }
 
+    // Click a node to inspect its full metadata.
+    cy.on("tap", "node", (evt) => {
+      const d = evt.target.data();
+      const color = KIND_COLORS[d.kind] || "#8b949e";
+      const justs = (d.justifications || []);
+      const justHtml = justs.length
+        ? justs.map((j) =>
+            `<div class="row">↳ <b>${j.id}</b> (by ${j.author}): ${j.premises.join(", ")}</div>`
+          ).join("")
+        : `<div class="row">none (raw premise)</div>`;
+
+      document.getElementById("panel-body").innerHTML = `
+        <h2>${d.id}
+          <span class="pill" style="background:${color};color:#0d1117">${d.kind}</span>
+        </h2>
+        <div class="text">${d.text}</div>
+        <div class="row"><b>state:</b> ${d.state === "in" ? "IN (believed)" : "OUT (ghost)"}</div>
+        <div class="row"><b>author:</b> ${d.author}</div>
+        <div class="row"><b>level:</b> ${d.level}</div>
+        <div class="row"><b>credibility:</b> ${d.credibility}</div>
+        ${d.challenged ? '<div class="row" style="color:#f85149"><b>challenged</b></div>' : ""}
+        <div class="just"><b>justified by:</b>${justHtml}</div>
+      `;
+      document.getElementById("panel").style.display = "block";
+    });
+
+    // Click empty canvas to dismiss the panel.
+    cy.on("tap", (evt) => {
+      if (evt.target === cy) document.getElementById("panel").style.display = "none";
+    });
+
+    let socket = null;
+
     function connect() {
       const ws = new WebSocket(`ws://${location.host}/ws`);
+      socket = ws;
       const status = document.getElementById("status");
-      ws.onopen = () => (status.textContent = "connected");
+      const runBtn = document.getElementById("run-btn");
+      ws.onopen = () => {
+        status.textContent = "connected";
+        runBtn.disabled = false;
+      };
       ws.onclose = () => {
         status.textContent = "disconnected — retrying…";
+        runBtn.disabled = true;
         setTimeout(connect, 1500);
       };
-      ws.onmessage = (msg) => render(JSON.parse(msg.data));
+      ws.onmessage = (msg) => {
+        render(JSON.parse(msg.data));
+        // A fresh snapshot after a run means analysis finished.
+        status.textContent = "connected";
+        runBtn.disabled = false;
+      };
     }
+
+    document.getElementById("run-btn").addEventListener("click", () => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({ cmd: "run" }));
+      document.getElementById("status").textContent = "analysing…";
+      document.getElementById("run-btn").disabled = true;
+    });
+
     connect();
   </script>
 </body>

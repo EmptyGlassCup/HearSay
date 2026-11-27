@@ -5,9 +5,9 @@ Knowledge sources depend only on the LLMClient interface (one method: complete).
 you swap a local model (LM Studio) for a hosted API (DeepSeek/Claude/OpenAI) without
 touching any KS — they all speak the same OpenAI-compatible chat-completions shape.
 
-LocalLLMClient targets LM Studio's server (OpenAI-compatible, default
-http://localhost:1234/v1). The same class works against any OpenAI-compatible endpoint by
-changing base_url and supplying an api_key.
+OpenAICompatClient talks to any OpenAI-compatible /chat/completions endpoint — local
+(LM Studio, default http://localhost:1234/v1, no key) or remote (DeepSeek/OpenAI, with a
+base_url and api_key). Same class, different construction.
 """
 from abc import ABC, abstractmethod
 import json
@@ -26,7 +26,7 @@ class LLMError(Exception):
     """Raised when the LLM call fails (network, bad status, unparseable response)."""
 
 
-class LocalLLMClient(LLMClient):
+class OpenAICompatClient(LLMClient):
     def __init__(
         self,
         base_url: str = "http://localhost:1234/v1",
@@ -66,3 +66,7 @@ class LocalLLMClient(LLMClient):
             return payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"Unexpected LLM response shape: {exc}") from exc
+
+
+# Backward-compatible alias: the local-only name used before the generalisation.
+LocalLLMClient = OpenAICompatClient
