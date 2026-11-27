@@ -1,8 +1,75 @@
 from hearsay.irc.parser import IRCMessage
+from hearsay.irc.parser import IRCMessage
 from hearsay.protocol.events import (
     Event, ClaimEvent, JustifyEvent, RetractClaimEvent, RetractJustifyEvent, ChallengeEvent
 )
 from hearsay.board.board import Board
+
+
+# Human-facing command syntax, typed by a person in an ordinary IRC client. These carry no
+# bb-tags, so the kernel tries decode() first (machine events) and falls back to this.
+HELP_TEXT = (
+    "HearSay commands: "
+    "!claim <evidence|hypothesis|conclusion|goal> <credibility 0-1> <text>  |  "
+    "!retract <id>  |  "
+    "!challenge <id>  |  "
+    "!help"
+)
+
+_VALID_KINDS = ("evidence", "hypothesis", "conclusion", "goal")
+
+
+def decode_human_command(msg: IRCMessage, allocate_id) -> Event | None:
+    """Parse a human-typed `!command` into an Event. Returns None for anything that is not a
+    recognised, well-formed command (ordinary chatter is ignored — never crashes).
+
+    allocate_id: a zero-arg callable the KERNEL provides, returning a fresh unique claim id.
+                 Humans don't invent ids; the kernel assigns one for !claim and echoes it back.
+
+    Note: `!help` is handled by the kernel (it replies with HELP_TEXT), not here, since it
+    produces no board event.
+    """
+    text = msg.params[-1].strip() if msg.params else ""
+    if not text.startswith("!"):
+        return None
+
+    author = msg.prefix.split("!")[0] if msg.prefix else "human"
+    parts = text.split()
+    cmd = parts[0].lower()
+
+    try:
+        if cmd == "!claim":
+            # !claim <kind> <credibility> <text...>
+            kind = parts[1].lower()
+            if kind not in _VALID_KINDS:
+                return None
+            credibility = float(parts[2])
+            if not (0.0 <= credibility <= 1.0):
+                return None
+            body = " ".join(parts[3:]).strip()
+            if not body:
+                return None
+            level = 0 if kind == "evidence" else 1   # humans assert raw evidence or a claim
+            return ClaimEvent(
+                author=author,
+                claim_id=allocate_id(),
+                text=body,
+                kind=kind,
+                level=level,
+                credibility=credibility,
+            )
+
+        if cmd == "!retract":
+            return RetractClaimEvent(author=author, retract_claim_id=parts[1])
+
+        if cmd == "!challenge":
+            return ChallengeEvent(author=author, challenge_id=parts[1])
+
+    except (IndexError, ValueError):
+        return None   # malformed command -> ignore, never crash
+
+    return None
+
 
 def decode(msg: IRCMessage) -> Event | None:
 
