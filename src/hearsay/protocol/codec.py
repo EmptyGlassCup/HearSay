@@ -10,7 +10,9 @@ from hearsay.board.board import Board
 # bb-tags, so the kernel tries decode() first (machine events) and falls back to this.
 HELP_TEXT = (
     "HearSay commands: "
-    "!claim <evidence|hypothesis|conclusion|goal> <credibility 0-1> <text>  |  "
+    "!goal <question>  |  "
+    "!claim evidence <0-1> <text>  |  "
+    "!claim hypothesis|conclusion <0-1> premises=<id,id> <text>  |  "
     "!retract <id>  |  "
     "!challenge <id>  |  "
     "!help"
@@ -19,19 +21,25 @@ HELP_TEXT = (
 _VALID_KINDS = ("evidence", "hypothesis", "conclusion", "goal")
 
 
-def decode_human_command(msg: IRCMessage, allocate_id) -> Event | None:
-    """Parse a human-typed `!command` into an Event. Returns None for anything that is not a
-    recognised, well-formed command (ordinary chatter is ignored — never crashes).
+def decode_human_command(msg: IRCMessage, allocate_id, board) -> list[Event]:
+    """Parse a human-typed `!command` into events. Returns a (possibly empty) LIST — a
+    grounded !claim produces a ClaimEvent AND a JustifyEvent. Anything unrecognised or
+    malformed yields [] (ordinary chatter is ignored; never crashes).
 
-    allocate_id: a zero-arg callable the KERNEL provides, returning a fresh unique claim id.
-                 Humans don't invent ids; the kernel assigns one for !claim and echoes it back.
+    allocate_id : zero-arg callable returning a fresh claim id (the kernel assigns ids).
+    board       : read-only, used to validate that premise ids actually exist.
 
-    Note: `!help` is handled by the kernel (it replies with HELP_TEXT), not here, since it
-    produces no board event.
+    Rules enforced here:
+      - evidence: a raw observation. Takes NO premises. (premises= on evidence -> rejected)
+      - hypothesis/conclusion: MUST carry premises= (a grounded claim), each an existing id.
+        This prevents dangling, ungrounded hypotheses that would behave like evidence and
+        survive retractions they should depend on.
+
+    !help is handled by the kernel. !goal is handled by the kernel (reconfigures agents).
     """
     text = msg.params[-1].strip() if msg.params else ""
     if not text.startswith("!"):
-        return None
+        return []
 
     author = msg.prefix.split("!")[0] if msg.prefix else "human"
     parts = text.split()
@@ -39,36 +47,54 @@ def decode_human_command(msg: IRCMessage, allocate_id) -> Event | None:
 
     try:
         if cmd == "!claim":
-            # !claim <kind> <credibility> <text...>
+            # !claim <kind> <credibility> [premises=id,id] <text...>
             kind = parts[1].lower()
             if kind not in _VALID_KINDS:
-                return None
+                return []
             credibility = float(parts[2])
             if not (0.0 <= credibility <= 1.0):
-                return None
-            body = " ".join(parts[3:]).strip()
+                return []
+
+            rest = parts[3:]
+            premises = ()
+            if rest and rest[0].lower().startswith("premises="):
+                raw = rest[0].split("=", 1)[1]
+                premises = tuple(p for p in raw.split(",") if p)
+                rest = rest[1:]
+            body = " ".join(rest).strip()
             if not body:
-                return None
-            level = 0 if kind == "evidence" else 1   # humans assert raw evidence or a claim
-            return ClaimEvent(
-                author=author,
-                claim_id=allocate_id(),
-                text=body,
-                kind=kind,
-                level=level,
-                credibility=credibility,
-            )
+                return []
+
+            if kind == "evidence":
+                if premises:
+                    return []   # evidence is foundational: it cannot have premises
+                return [ClaimEvent(author=author, claim_id=allocate_id(), text=body,
+                                   kind=kind, level=0, credibility=credibility)]
+
+            # hypothesis / conclusion: premises are REQUIRED and must all exist.
+            if not premises:
+                return []
+            if any(pid not in board.claim_events for pid in premises):
+                return []   # dangling reference -> reject the whole command
+
+            level = max(board.claim_events[pid].level for pid in premises) + 1
+            claim_id = allocate_id()
+            claim = ClaimEvent(author=author, claim_id=claim_id, text=body,
+                               kind=kind, level=level, credibility=credibility)
+            justify = JustifyEvent(author=author, justification_id=f"{claim_id}j",
+                                   conclusion=claim_id, premises=premises)
+            return [claim, justify]
 
         if cmd == "!retract":
-            return RetractClaimEvent(author=author, retract_claim_id=parts[1])
+            return [RetractClaimEvent(author=author, retract_claim_id=parts[1])]
 
         if cmd == "!challenge":
-            return ChallengeEvent(author=author, challenge_id=parts[1])
+            return [ChallengeEvent(author=author, challenge_id=parts[1])]
 
     except (IndexError, ValueError):
-        return None   # malformed command -> ignore, never crash
+        return []   # malformed command -> ignore, never crash
 
-    return None
+    return []
 
 
 def decode(msg: IRCMessage) -> Event | None:

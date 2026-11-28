@@ -48,6 +48,12 @@ Reason toward the goal. Two kinds of contribution are allowed:
   - a "conclusion": a confident answer to the QUESTION, naming the root cause. Only give a
     conclusion when the supporting hypotheses/evidence make you confident.
 
+CITE PREMISES MINIMALLY. premise_ids must contain ONLY the facts/hypotheses that DIRECTLY
+support this specific claim — usually 2 to 4 ids. Do NOT list every known fact. A fact that
+is merely true, or related to the incident in general, is NOT a premise unless this claim
+depends on it directly. Over-citing is an error: if you retracted any cited premise, the
+claim should no longer hold — if it would still hold, that premise does not belong.
+
 Respond with ONLY a JSON object, no prose. Either:
   {{"claim_kind": "hypothesis" | "conclusion",
     "conclusion_text": "<your statement>",

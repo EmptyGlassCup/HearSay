@@ -1,0 +1,54 @@
+{
+  "id": "exfil_stale_geoip",
+  "title": "Database exfiltration: overseas attacker or compromised internal account?",
+  "question": "Who performed the 2.1 GB outbound transfer from db-prod-01, and from where did they connect?",
+  "ground_truth": "Account mchen was compromised through malware on her workstation WS-114 (EDR alert at 02:19) and was used from inside the corporate egress range, which moved to 203.0.113.0/24 on 2026-10-02. The overseas geolocation came from a stale 2024 GeoIP snapshot and was not evidence of an external attacker.",
+
+  "_demo_note": "Both conclusions and two linking hypotheses are intentionally NOT seeded. They are supplied live (see twist.live_injections) so the LLM draws each conclusion at the right moment. The insider linking hypothesis h_hijack is withheld at seed time so insider is NOT concludable until after the retraction.",
+
+  "evidence": [
+    {"id": "e_geo", "text": "GeoIP lookup for 203.0.113.45 using database snapshot dated 2024-02: Singapore", "kind": "evidence", "level": 0, "credibility": 0.85, "misleading": true},
+    {"id": "e_srcip", "text": "DB audit log: session 88213 opened 02:39 as account mchen from source address 203.0.113.45", "kind": "evidence", "level": 0, "credibility": 0.96, "misleading": false},
+    {"id": "e_newip", "text": "Auth logs: no sessions from 203.0.113.45 in the previous 90 days", "kind": "evidence", "level": 0, "credibility": 0.88, "misleading": false},
+    {"id": "e_offhrs", "text": "Account mchen had no successful logins between 22:00 and 06:00 in the previous 90 days. Session 88213 ran 02:39 to 03:21", "kind": "evidence", "level": 0, "credibility": 0.9, "misleading": false},
+    {"id": "e_ua", "text": "Session 88213 client identified as python-requests/2.31.0. Prior mchen sessions used DBeaver 23.1", "kind": "evidence", "level": 0, "credibility": 0.9, "misleading": false},
+    {"id": "e_xfer", "text": "03:12 to 03:21 outbound transfer of 2.1 GB from db-prod-01 to 198.51.100.77 port 443", "kind": "evidence", "level": 0, "credibility": 0.97, "misleading": false},
+    {"id": "e_dest", "text": "198.51.100.77 is an object storage endpoint under a domain registered 11 days ago", "kind": "evidence", "level": 0, "credibility": 0.88, "misleading": false},
+    {"id": "e_edr", "text": "02:19 EDR alert severity medium status unreviewed on WS-114 assigned to mchen: outlook.exe spawned powershell.exe", "kind": "evidence", "level": 0, "credibility": 0.84, "misleading": false},
+    {"id": "e_egress", "text": "Change ticket CHG-4471 applied 2026-10-02: corporate egress NAT pool moved to 203.0.113.0/24", "kind": "evidence", "level": 0, "credibility": 0.92, "misleading": false},
+    {"id": "e_noexploit", "text": "WAF and DB audit for session 88213 show no SQL injection signatures and no privilege escalation events", "kind": "evidence", "level": 0, "credibility": 0.9, "misleading": false}
+  ],
+
+  "claims": [
+    {"id": "h_overseas", "text": "Session 88213 originated from an address located overseas", "kind": "hypothesis", "level": 1, "credibility": 0.88},
+    {"id": "h_insidenet", "text": "Session 88213 originated from the corporate egress pool", "kind": "hypothesis", "level": 1, "credibility": 0.55},
+    {"id": "h_wscomp", "text": "Workstation WS-114 was running attacker-controlled code at 02:19", "kind": "hypothesis", "level": 1, "credibility": 0.6},
+    {"id": "h_infra", "text": "198.51.100.77 is attacker-controlled infrastructure", "kind": "hypothesis", "level": 1, "credibility": 0.8},
+    {"id": "h_scripted", "text": "Session 88213 was driven by a script and not by the account owner at a GUI client", "kind": "hypothesis", "level": 1, "credibility": 0.82},
+    {"id": "h_newloc", "text": "Account mchen was used from a location it had never used before", "kind": "hypothesis", "level": 2, "credibility": 0.86},
+    {"id": "h_outsidenet", "text": "Session 88213 originated outside the corporate network", "kind": "hypothesis", "level": 2, "credibility": 0.85},
+    {"id": "h_credsext", "text": "Valid credentials for mchen were used from outside the network without exploiting a vulnerability", "kind": "hypothesis", "level": 2, "credibility": 0.8}
+  ],
+
+  "justifications": [
+    {"id": "j_overseas", "conclusion": "h_overseas", "premises": ["e_geo", "e_srcip"]},
+    {"id": "j_newloc", "conclusion": "h_newloc", "premises": ["h_overseas", "e_newip"]},
+    {"id": "j_outside", "conclusion": "h_outsidenet", "premises": ["h_newloc"]},
+    {"id": "j_credsext", "conclusion": "h_credsext", "premises": ["h_outsidenet", "e_noexploit"]},
+    {"id": "j_inside", "conclusion": "h_insidenet", "premises": ["e_srcip", "e_egress"]},
+    {"id": "j_ws", "conclusion": "h_wscomp", "premises": ["e_edr"]},
+    {"id": "j_infra", "conclusion": "h_infra", "premises": ["e_dest", "e_xfer"]},
+    {"id": "j_scripted", "conclusion": "h_scripted", "premises": ["e_ua", "e_offhrs"]}
+  ],
+
+  "twist": {
+    "retract": "e_geo",
+    "reason": "The GeoIP snapshot is dated 2024-02 and is stale. The prefix was reassigned to the corporate egress pool on 2026-10-02 (see e_egress).",
+    "live_injections": {
+      "before_first_run": "h_foreign: '!claim hypothesis 0.84 premises=h_outsidenet,h_scripted a party outside the organisation operated session 88213' (completes external support so the LLM can draw the external conclusion)",
+      "after_retraction": "h_hijack: '!claim hypothesis 0.5 premises=h_wscomp,h_insidenet,h_scripted account mchen was taken over via WS-114 and used from inside the network' (completes insider support so the LLM can draw the insider conclusion)"
+    },
+    "expected_first_conclusion": "external (only reachable conclusion before retraction)",
+    "expected_final_conclusion": "insider (only reachable conclusion after e_geo is retracted and h_hijack is supplied)"
+  }
+}

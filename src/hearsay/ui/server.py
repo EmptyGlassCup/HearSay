@@ -31,15 +31,22 @@ _WEB_DIR = Path(__file__).parent / "web"
 
 
 class UIServer:
-    def __init__(self, board, on_command=None):
+    def __init__(self, board, on_command=None, status_provider=None):
         self.board = board
-        # on_command: async callable invoked with the command name when the browser sends
-        # one (e.g. "run"). The kernel passes its run_analysis coroutine here.
+        # on_command: async callable invoked with the command name the browser sends.
         self.on_command = on_command
+        # status_provider: zero-arg callable returning a dict of live kernel status
+        # (goal, llm_key_present, last_error) merged into each snapshot. Optional.
+        self.status_provider = status_provider
         self.app = FastAPI()
         self._clients: set[WebSocket] = set()
         self._server: uvicorn.Server | None = None
         self._register_routes()
+
+    def _snapshot(self) -> dict:
+        snap = board_snapshot(self.board)
+        snap["status"] = self.status_provider() if self.status_provider else {}
+        return snap
 
     def _register_routes(self):
         @self.app.get("/")
@@ -51,7 +58,7 @@ class UIServer:
             await websocket.accept()
             self._clients.add(websocket)
             # Send the current state immediately on connect.
-            await websocket.send_json(board_snapshot(self.board))
+            await websocket.send_json(self._snapshot())
             try:
                 while True:
                     raw = await websocket.receive_text()
@@ -78,7 +85,7 @@ class UIServer:
         """Push the current board snapshot to every connected browser."""
         if not self._clients:
             return
-        snapshot = board_snapshot(self.board)
+        snapshot = self._snapshot()
         dead = set()
         for client in self._clients:
             try:

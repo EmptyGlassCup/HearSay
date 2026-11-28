@@ -18,7 +18,13 @@
     #legend { font-size: 12px; color: #8b949e; margin-left: auto; display: flex; gap: 14px; }
     .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
       margin-right: 4px; vertical-align: middle; }
-    #cy { width: 100%; height: calc(100% - 44px); }
+    #statusbar { padding: 8px 16px; font-size: 13px; display: flex; gap: 20px;
+      align-items: center; border-bottom: 1px solid #21262d; min-height: 18px; }
+    #statusbar .goal { color: #e6edf3; }
+    #statusbar .goal b { color: #8b949e; font-weight: 600; }
+    #statusbar .warn { color: #d29922; }
+    #statusbar .err  { color: #f85149; }
+    #cy { width: 100%; height: calc(100% - 44px - 35px); }
     #panel {
       position: absolute; top: 56px; right: 12px; width: 300px;
       background: #161b22; border: 1px solid #30363d; border-radius: 8px;
@@ -44,10 +50,10 @@
       <span><span class="swatch" style="background:#58a6ff"></span>evidence</span>
       <span><span class="swatch" style="background:#d29922"></span>hypothesis</span>
       <span><span class="swatch" style="background:#3fb950"></span>conclusion</span>
-      <span><span class="swatch" style="background:#f85149"></span>goal</span>
       <span style="opacity:.4"><span class="swatch" style="background:#8b949e"></span>ghost (OUT)</span>
     </div>
   </div>
+  <div id="statusbar"></div>
   <div id="cy"></div>
   <div id="panel">
     <span class="close" onclick="document.getElementById('panel').style.display='none'">✕</span>
@@ -56,8 +62,7 @@
 
   <script>
     const KIND_COLORS = {
-      evidence: "#58a6ff", hypothesis: "#d29922",
-      conclusion: "#3fb950", goal: "#f85149",
+      evidence: "#58a6ff", hypothesis: "#d29922", conclusion: "#3fb950",
     };
 
     const cy = cytoscape({
@@ -80,12 +85,17 @@
             "width": 34, "height": 34,
             "border-width": 2,
             "border-color": "#30363d",
+            // Smoothly animate state changes (opacity/border) so ghosting and reviving
+            // transition rather than snap. This is what makes the retraction cascade
+            // visible as it propagates.
+            "transition-property": "opacity, border-color, border-width, background-color",
+            "transition-duration": "0.35s",
           },
         },
         {
           // ghosts: OUT claims are dimmed and dashed
           selector: "node[state = 'out']",
-          style: { "opacity": 0.3, "border-style": "dashed" },
+          style: { "opacity": 0.28, "border-style": "dashed" },
         },
         {
           selector: "node[?challenged]",
@@ -100,11 +110,13 @@
             "target-arrow-shape": "triangle",
             "arrow-scale": 1.2,
             "curve-style": "bezier",
+            "transition-property": "opacity, line-color",
+            "transition-duration": "0.35s",
           },
         },
         {
           selector: "edge[state = 'out']",
-          style: { "opacity": 0.2, "line-style": "dashed" },
+          style: { "opacity": 0.15, "line-style": "dashed" },
         },
       ],
     });
@@ -131,23 +143,60 @@
       });
     }
 
+    // Diff-based render: update existing elements in place (so state changes animate via the
+    // CSS transitions), add only genuinely new ones (fading them in), remove only gone ones.
+    // We relayout + fit only when the SET of nodes changed, so a state-only update (the
+    // ghosting cascade) animates in place without the whole graph jumping around.
     function render(snapshot) {
       const outIds = new Set(
         snapshot.nodes.filter((n) => n.state === "out").map((n) => n.id)
       );
-      const elements = [];
+
+      const snapNodeIds = new Set(snapshot.nodes.map((n) => n.id));
+      const existingNodeIds = new Set(cy.nodes().map((n) => n.id()));
+      let structureChanged = false;
+
+      cy.startBatch();
+
+      // Remove nodes that are gone.
+      cy.nodes().forEach((n) => {
+        if (!snapNodeIds.has(n.id())) { n.remove(); structureChanged = true; }
+      });
+
+      // Add or update nodes.
+      const newNodes = [];
       for (const n of snapshot.nodes) {
-        elements.push({ data: { ...n } });
+        const existing = cy.getElementById(n.id);
+        if (existing.nonempty()) {
+          existing.data(n);                 // update in place -> state change animates
+        } else {
+          newNodes.push(cy.add({ group: "nodes", data: { ...n } }));
+          structureChanged = true;
+        }
       }
+
+      // Rebuild edges (cheap; they carry no animation state worth preserving beyond in/out).
+      cy.edges().remove();
       for (const e of snapshot.edges) {
         const state = outIds.has(e.source) || outIds.has(e.target) ? "out" : "in";
-        elements.push({ data: { ...e, state } });
+        cy.add({ group: "edges", data: { ...e, state } });
       }
-      cy.elements().remove();
-      cy.add(elements);
-      cy.layout({ name: "preset", positions: undefined, fit: false }).run();
-      layoutByLevel();
-      cy.fit(undefined, 60);
+
+      cy.endBatch();
+
+      // Fade new nodes in.
+      newNodes.forEach((n) => {
+        n.style("opacity", 0);
+        const target = n.data("state") === "out" ? 0.28 : 1;
+        n.animate({ style: { opacity: target } }, { duration: 350 });
+      });
+
+      // Only relayout when the node set changed; otherwise leave positions so in-place state
+      // transitions (ghost/revive) animate without the layout shifting.
+      if (structureChanged) {
+        layoutByLevel();
+        cy.animate({ fit: { eles: cy.elements(), padding: 60 } }, { duration: 350 });
+      }
     }
 
     // Click a node to inspect its full metadata.
@@ -181,6 +230,28 @@
       if (evt.target === cy) document.getElementById("panel").style.display = "none";
     });
 
+    // Render the status bar: goal (or warning), LLM-key warning, last analysis error.
+    function renderStatus(s) {
+      const parts = [];
+      if (s.goal) {
+        parts.push(`<span class="goal"><b>goal:</b> ${escapeHtml(s.goal)}</span>`);
+      } else {
+        parts.push(`<span class="warn">⚠ no goal set — type <b>!goal &lt;question&gt;</b> in IRC</span>`);
+      }
+      if (s.llm_key_present === false) {
+        parts.push(`<span class="err">⚠ no LLM key configured — analysis will fail</span>`);
+      }
+      if (s.last_error) {
+        parts.push(`<span class="err">✕ last analysis failed: ${escapeHtml(s.last_error)}</span>`);
+      }
+      document.getElementById("statusbar").innerHTML = parts.join("");
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
     let socket = null;
 
     function connect() {
@@ -198,7 +269,9 @@
         setTimeout(connect, 1500);
       };
       ws.onmessage = (msg) => {
-        render(JSON.parse(msg.data));
+        const snap = JSON.parse(msg.data);
+        render(snap);
+        renderStatus(snap.status || {});
         // A fresh snapshot after a run means analysis finished.
         status.textContent = "connected";
         runBtn.disabled = false;
